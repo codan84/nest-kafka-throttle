@@ -1,30 +1,39 @@
+import { createWriteStream } from 'node:fs'
 import { Kafka } from 'kafkajs'
 import { ulid } from 'ulid'
+import * as csv from 'fast-csv'
 
 let timerId = null
 let count = 0
-const max = 1000
+const maxCount = 40
 const delay = 500
 
+const file = createWriteStream('/app/outputs/producer.csv')
+const csvStream = csv.format({ headers: true })
+csvStream.pipe(file).on('end', () => file.close())
+
 const sendEvent = async (producer) => {
-  console.log('>>> Producer sending event...')
+  console.log(`>>> Producer sending event ${count}/${maxCount}...`)
+  const now = Date.now()
+  const id = `event-${count}-${ulid()}`
   await producer.send({
     topic: 'my_event',
     messages: [
       {
-        key: ulid(),
+        key: id,
         value: JSON.stringify({
-          publishedTimestamp: Date.now()
+          publishedTimestamp: now
         })
       }
     ]
   })
+  csvStream.write({ published: now, id})
   count++
-  console.log('     ...done')
 
-  if (timerId && count >= max) {
+  if (timerId && count >= maxCount) {
     console.log('>> Max events published')
     clearInterval(timerId)
+    csvStream.end()
   }
 }
 
