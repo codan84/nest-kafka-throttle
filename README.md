@@ -1,99 +1,120 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# NestJs Throttler
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Testing NestJs Throttler with Kafka microservice
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://coveralls.io/github/nestjs/nest?branch=master" target="_blank"><img src="https://coveralls.io/repos/github/nestjs/nest/badge.svg?branch=master#9" alt="Coverage" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Links
 
-## Description
+- [nestjs kafka microservice](https://docs.nestjs.com/microservices/kafka)
+- [nestjs guards for microservices](https://docs.nestjs.com/microservices/guards)
+- [nestjs rate limiting](https://docs.nestjs.com/security/rate-limiting#rate-limiting)
+- [nestjs guards](https://docs.nestjs.com/guards)
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## Background
 
-## Project setup
+According to NestJs docs you can use any guard in a microservices app as-is, except you have to throw `RpcException`.  
+On the other hand in the throttling section modifications to the guard have to be done to be used with Websockets or GQL.  
+In theory we should only need to modify the exception the throttling guard throws?
 
-```bash
-$ npm install
+## Setup
+
+Docker-compose setup with few containers:
+- kafka
+- kafka-init (to create a topic)
+- kafka UI (for convenience)
+- consumer - NestJS app that will consume from the topic and simply print on the console
+- producer - will mass-send events to a topic
+
+## Running
+
+If you make any cource-code changes:
+```
+npm run build:docker
 ```
 
-## Compile and run the project
-
-```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+To start docker-compose:
+```
+npm run start:docker
 ```
 
-## Run tests
+Keep in mind that due to the nature of NestJS beaing a heavy beast the consumer will start a little while after the producer.
 
-```bash
-# unit tests
-$ npm run test
+## Output
 
-# e2e tests
-$ npm run test:e2e
+2 CSV files will be written upon completion:
+- `./outputs/producer.csv`
+- `./outputs/consumer.csv`
 
-# test coverage
-$ npm run test:cov
+Things to look out for:
+- the same number of rows (each row representing either message published or message consumed)
+- IDs in the same order
+- publish/consume timestamps
+
+## Branches
+
+### main
+
+No throttling, consumer processing as many messages as it can. Call this a `controll group`.
+
+### with-builtin-throttler
+
+Using built-in throttler without any modifications.  
+We can already see issues here, as consumer logs errors every time it tries to consume a message:
+```
+consumer-1    | [Nest] 1  - 11/08/2024, 1:34:35 PM   ERROR [RpcExceptionsHandler] res.header is not a function
+consumer-1    | TypeError: res.header is not a function
+consumer-1    |     at ThrottlerGuard.handleRequest (/app/node_modules/@nestjs/throttler/dist/throttler.guard.js:118:17)
+consumer-1    |     at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+consumer-1    |     at async ThrottlerGuard.canActivate (/app/node_modules/@nestjs/throttler/dist/throttler.guard.js:86:28)
+consumer-1    |     at async GuardsConsumer.tryActivate (/app/node_modules/@nestjs/core/guards/guards-consumer.js:16:17)
+consumer-1    |     at async canActivateFn (/app/node_modules/@nestjs/microservices/context/rpc-context-creator.js:59:33)
+consumer-1    |     at async /app/node_modules/@nestjs/microservices/context/rpc-context-creator.js:50:31
+consumer-1    |     at async /app/node_modules/@nestjs/microservices/context/rpc-proxy.js:11:32
+consumer-1    |     at async ServerKafka.handleEvent (/app/node_modules/@nestjs/microservices/server/server-kafka.js:198:32)
+consumer-1    |     at async Runner.processEachMessage (/app/node_modules/kafkajs/src/consumer/runner.js:231:9)
+consumer-1    |     at async onBatch (/app/node_modules/kafkajs/src/consumer/runner.js:447:9)
+consumer-1    | [Nest] 1  - 11/08/2024, 1:34:35 PM   ERROR [ServerKafka] ERROR [Runner] Error when calling eachMessage {"timestamp":"2024-11-08T13:34:35.083Z","logger":"kafkajs","topic":"my_event","partition":0,"offset":"889","error":{"status":"error","message":"Internal server error"}}
 ```
 
-## Deployment
+This suggests that we do not only have to modify the exception type thrown (as per NestJS docs [here](https://docs.nestjs.com/microservices/guards)), but also modify the `handleRequest` function of the throttler guard!
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+### with-rpc-exception
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ npm install -g mau
-$ mau deploy
+Extending built-in throttler guard to throw RpcException as described in docs [here](https://docs.nestjs.com/microservices/guards).  
+We still see issues in `handleRequest`:
+```
+consumer-1    | [Nest] 1  - 11/08/2024, 4:05:00 PM   ERROR [RpcExceptionsHandler] res.header is not a function
+consumer-1    | TypeError: res.header is not a function
+consumer-1    |     at RcpThrottlerGuard.handleRequest (/app/node_modules/@nestjs/throttler/dist/throttler.guard.js:118:17)
+consumer-1    |     at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+consumer-1    |     at async RcpThrottlerGuard.canActivate (/app/node_modules/@nestjs/throttler/dist/throttler.guard.js:86:28)
+consumer-1    |     at async GuardsConsumer.tryActivate (/app/node_modules/@nestjs/core/guards/guards-consumer.js:16:17)
+consumer-1    |     at async canActivateFn (/app/node_modules/@nestjs/microservices/context/rpc-context-creator.js:59:33)
+consumer-1    |     at async /app/node_modules/@nestjs/microservices/context/rpc-context-creator.js:50:31
+consumer-1    |     at async /app/node_modules/@nestjs/microservices/context/rpc-proxy.js:11:32
+consumer-1    |     at async ServerKafka.handleEvent (/app/node_modules/@nestjs/microservices/server/server-kafka.js:198:32)
+consumer-1    |     at async Runner.processEachMessage (/app/node_modules/kafkajs/src/consumer/runner.js:231:9)
+consumer-1    |     at async onBatch (/app/node_modules/kafkajs/src/consumer/runner.js:447:9)
+consumer-1    | [Nest] 1  - 11/08/2024, 4:05:00 PM   ERROR [ServerKafka] ERROR [Runner] Error when calling eachMessage {"timestamp":"2024-11-08T16:05:00.214Z","logger":"kafkajs","topic":"my_event","partition":0,"offset":"889","error":{"status":"error","message":"Internal server error"}}
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+### with-handle-request
 
-## Resources
+Once we replace `handleRequest` with our own implementation things start working better, albeit not perfect.  
+There are few issues here:
+1. We are throwing `RpcException` and this creates a lot of noise upstream (see logs below)
+2. Message delivery gets retried mutliple times and after a while consumer shuts itself down and restarts.
 
-Check out a few resources that may come in handy when working with NestJS:
+```
+consumer-1    | >>> Got message id=event-37-01JC6TK3GHFVWZ5FY08RV1W5C2
+consumer-1    | [Nest] 1  - 11/08/2024, 9:26:32 PM   ERROR [ServerKafka] ERROR [Runner] Error when calling eachMessage {"timestamp":"2024-11-08T21:26:32.573Z","logger":"kafkajs","topic":"my_event","partition":0,"offset":"38","error":{"status":"error","message":"ThrottlerException: Too Many Requests"}}
+consumer-1    | [Nest] 1  - 11/08/2024, 9:26:32 PM   ERROR [ServerKafka] ERROR [Consumer] Crash: KafkaJSNumberOfRetriesExceeded: ThrottlerException: Too Many Requests {"timestamp":"2024-11-08T21:26:32.574Z","logger":"kafkajs","groupId":"nestjs-group-server","retryCount":5,"stack":"KafkaJSNonRetriableError\n  Caused by: undefined"}
+consumer-1    | [Nest] 1  - 11/08/2024, 9:26:32 PM     LOG [ServerKafka] INFO [Consumer] Stopped {"timestamp":"2024-11-08T21:26:32.575Z","logger":"kafkajs","groupId":"nestjs-group-server"}
+kafka-1       | [2024-11-08 21:26:32,574] INFO [GroupCoordinator 0]: Preparing to rebalance group nestjs-group-server in state PreparingRebalance with old generation 17 (__consumer_offsets-33) (reason: Removing member nestjs-consumer-server-5be76a95-08f9-4ef5-ad4e-f276cf4846e8 on LeaveGroup; client reason: not provided) (kafka.coordinator.group.GroupCoordinator)
+consumer-1    | [Nest] 1  - 11/08/2024, 9:26:32 PM   ERROR [ServerKafka] ERROR [Consumer] Restarting the consumer in 10388ms {"timestamp":"2024-11-08T21:26:32.575Z","logger":"kafkajs","retryCount":5,"retryTime":10388,"groupId":"nestjs-group-server"}
+kafka-1       | [2024-11-08 21:26:32,574] INFO [GroupCoordinator 0]: Group nestjs-group-server with generation 18 is now empty (__consumer_offsets-33) (kafka.coordinator.group.GroupCoordinator)
+kafka-1       | [2024-11-08 21:26:32,574] INFO [GroupCoordinator 0]: Member MemberMetadata(memberId=nestjs-consumer-server-5be76a95-08f9-4ef5-ad4e-f276cf4846e8, groupInstanceId=None, clientId=nestjs-consumer-server, clientHost=/172.18.0.4, sessionTimeoutMs=30000, rebalanceTimeoutMs=60000, supportedProtocols=List(RoundRobinAssigner)) has left group nestjs-group-server through explicit `LeaveGroup`; client reason: not provided (kafka.coordinator.group.GroupCoordinator)
+consumer-1    | [Nest] 1  - 11/08/2024, 9:26:42 PM     LOG [ServerKafka] INFO [Consumer] Starting {"timestamp":"2024-11-08T21:26:42.963Z","logger":"kafkajs","groupId":"nestjs-group-server"}
+```
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+Thing to keep in mind is that standard throttler throttles Http requests per client (ie given clinet can make X requests in Y seconds).
+We want to throttle only given topic, and thus we choose to use topic name as `tracker` when incrementing the request counter.

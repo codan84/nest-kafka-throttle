@@ -11,6 +11,9 @@ async function bootstrap() {
     options: {
       client: {
         brokers: ['kafka:9092'],
+      },
+      subscribe: {
+        fromBeginning: true
       }
     }
   })
