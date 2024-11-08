@@ -97,24 +97,15 @@ consumer-1    |     at async onBatch (/app/node_modules/kafkajs/src/consumer/run
 consumer-1    | [Nest] 1  - 11/08/2024, 4:05:00 PM   ERROR [ServerKafka] ERROR [Runner] Error when calling eachMessage {"timestamp":"2024-11-08T16:05:00.214Z","logger":"kafkajs","topic":"my_event","partition":0,"offset":"889","error":{"status":"error","message":"Internal server error"}}
 ```
 
-### with-handle-request
+### without-exception
 
-Once we replace `handleRequest` with our own implementation things start working better, albeit not perfect.  
-There are few issues here:
-1. We are throwing `RpcException` and this creates a lot of noise upstream (see logs below)
-2. Message delivery gets retried mutliple times and after a while consumer shuts itself down and restarts.
-
+Changing implementation of the throttler to not throw an exception and simply return `false` is not ideal either.  
+If we return `false` the resource is marked as `forbidden` resulting in a flurry of retries, errors and eventually consumer restart.
 ```
-consumer-1    | >>> Got message id=event-37-01JC6TK3GHFVWZ5FY08RV1W5C2
-consumer-1    | [Nest] 1  - 11/08/2024, 9:26:32 PM   ERROR [ServerKafka] ERROR [Runner] Error when calling eachMessage {"timestamp":"2024-11-08T21:26:32.573Z","logger":"kafkajs","topic":"my_event","partition":0,"offset":"38","error":{"status":"error","message":"ThrottlerException: Too Many Requests"}}
-consumer-1    | [Nest] 1  - 11/08/2024, 9:26:32 PM   ERROR [ServerKafka] ERROR [Consumer] Crash: KafkaJSNumberOfRetriesExceeded: ThrottlerException: Too Many Requests {"timestamp":"2024-11-08T21:26:32.574Z","logger":"kafkajs","groupId":"nestjs-group-server","retryCount":5,"stack":"KafkaJSNonRetriableError\n  Caused by: undefined"}
-consumer-1    | [Nest] 1  - 11/08/2024, 9:26:32 PM     LOG [ServerKafka] INFO [Consumer] Stopped {"timestamp":"2024-11-08T21:26:32.575Z","logger":"kafkajs","groupId":"nestjs-group-server"}
-kafka-1       | [2024-11-08 21:26:32,574] INFO [GroupCoordinator 0]: Preparing to rebalance group nestjs-group-server in state PreparingRebalance with old generation 17 (__consumer_offsets-33) (reason: Removing member nestjs-consumer-server-5be76a95-08f9-4ef5-ad4e-f276cf4846e8 on LeaveGroup; client reason: not provided) (kafka.coordinator.group.GroupCoordinator)
-consumer-1    | [Nest] 1  - 11/08/2024, 9:26:32 PM   ERROR [ServerKafka] ERROR [Consumer] Restarting the consumer in 10388ms {"timestamp":"2024-11-08T21:26:32.575Z","logger":"kafkajs","retryCount":5,"retryTime":10388,"groupId":"nestjs-group-server"}
-kafka-1       | [2024-11-08 21:26:32,574] INFO [GroupCoordinator 0]: Group nestjs-group-server with generation 18 is now empty (__consumer_offsets-33) (kafka.coordinator.group.GroupCoordinator)
-kafka-1       | [2024-11-08 21:26:32,574] INFO [GroupCoordinator 0]: Member MemberMetadata(memberId=nestjs-consumer-server-5be76a95-08f9-4ef5-ad4e-f276cf4846e8, groupInstanceId=None, clientId=nestjs-consumer-server, clientHost=/172.18.0.4, sessionTimeoutMs=30000, rebalanceTimeoutMs=60000, supportedProtocols=List(RoundRobinAssigner)) has left group nestjs-group-server through explicit `LeaveGroup`; client reason: not provided (kafka.coordinator.group.GroupCoordinator)
-consumer-1    | [Nest] 1  - 11/08/2024, 9:26:42 PM     LOG [ServerKafka] INFO [Consumer] Starting {"timestamp":"2024-11-08T21:26:42.963Z","logger":"kafkajs","groupId":"nestjs-group-server"}
+consumer-1    | [Nest] 1  - 11/08/2024, 9:58:15 PM   ERROR [ServerKafka] ERROR [Runner] Error when calling eachMessage {"timestamp":"2024-11-08T21:58:15.118Z","logger":"kafkajs","topic":"my_event","partition":0,"offset":"38","error":{"status":"error","message":"Forbidden resource"}}
+consumer-1    | [Nest] 1  - 11/08/2024, 9:58:15 PM   ERROR [ServerKafka] ERROR [Consumer] Crash: KafkaJSNumberOfRetriesExceeded: Forbidden resource {"timestamp":"2024-11-08T21:58:15.119Z","logger":"kafkajs","groupId":"nestjs-group-server","retryCount":5,"stack":"KafkaJSNonRetriableError\n  Caused by: undefined"}
+consumer-1    | [Nest] 1  - 11/08/2024, 9:58:15 PM     LOG [ServerKafka] INFO [Consumer] Stopped {"timestamp":"2024-11-08T21:58:15.120Z","logger":"kafkajs","groupId":"nestjs-group-server"}
+consumer-1    | [Nest] 1  - 11/08/2024, 9:58:15 PM   ERROR [ServerKafka] ERROR [Consumer] Restarting the consumer in 8370ms {"timestamp":"2024-11-08T21:58:15.120Z","logger":"kafkajs","retryCount":5,"retryTime":8370,"groupId":"nestjs-group-server"}
+consumer-1    | [Nest] 1  - 11/08/2024, 9:58:23 PM     LOG [ServerKafka] INFO [Consumer] Starting {"timestamp":"2024-11-08T21:58:23.491Z","logger":"kafkajs","groupId":"nestjs-group-server"}
+kafka-1       | [2024-11-08 21:58:23,506] INFO [GroupCoordinator 0]: Dynamic member with unknown member id joins group nestjs-group-server in Empty state. Created a new member id nestjs-consumer-server-5d3e038d-e40f-4f8c-be06-e763d95c6580 and request the member to rejoin with this id. (kafka.coordinator.group.GroupCoordinator)
 ```
-
-Thing to keep in mind is that standard throttler throttles Http requests per client (ie given clinet can make X requests in Y seconds).
-We want to throttle only given topic, and thus we choose to use topic name as `tracker` when incrementing the request counter.
