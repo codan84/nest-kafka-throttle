@@ -62,8 +62,10 @@ services:
       dockerfile: ./docker/Dockerfile-consumer
       context: ../
     depends_on:
-      kafka:
-        condition: service_healthy
+      init-kafka:
+        condition: service_completed_successfully
+    volumes:
+      - ../outputs:/app/outputs:rw
     networks:
       notifications:
 
@@ -71,8 +73,10 @@ services:
     build:
       context: ./producer
     depends_on:
-      kafka:
-        condition: service_healthy
+      init-kafka:
+        condition: service_completed_successfully
+    volumes:
+      - ../outputs:/app/outputs:rw
     networks:
       notifications:
 
