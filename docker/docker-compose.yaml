@@ -1,0 +1,80 @@
+version: '3.1'
+
+services:
+  kafka:
+    image: bitnami/kafka:latest
+    healthcheck:
+      test: kafka-topics.sh --list --bootstrap-server localhost:9092 || exit 1
+      interval: 1s
+      timeout: 60s
+      retries: 60
+    ports:
+      - 9092:9092
+      - 9093:9093
+    environment:
+      - KAFKA_CFG_NODE_ID=0
+      - KAFKA_CFG_PROCESS_ROLES=controller,broker
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=0@kafka:9093
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=true
+    networks:
+      notifications:
+        aliases:
+          - kafka
+  
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    ports:
+      - 8080:8080
+    environment:
+      DYNAMIC_CONFIG_ENABLED: 'true'
+      KAFKA_CLUSTERS_0_NAME: notifications
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: 'kafka:9092'
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      notifications:
+
+  init-kafka:
+    image: confluentinc/cp-kafka:6.1.1
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: [ '/bin/sh', '-c' ]
+    command: |
+      "
+      kafka-topics --bootstrap-server kafka:9092 --list
+
+      echo -e 'Creating kafka topics'
+      kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic my_event --replication-factor 1 --partitions 1
+
+      echo -e 'Successfully created the following topics:'
+      kafka-topics --bootstrap-server kafka:9092 --list
+      "
+    networks:
+      notifications:
+
+  consumer:
+    build:
+      dockerfile: ./docker/Dockerfile-consumer
+      context: ../
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      notifications:
+
+  producer:
+    build:
+      context: ./producer
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      notifications:
+
+networks:
+  notifications:
