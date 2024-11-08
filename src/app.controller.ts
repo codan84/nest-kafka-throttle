@@ -4,11 +4,11 @@ import {
   EventPattern,
   KafkaContext,
   Payload,
-  RpcException
+  KafkaRetriableException
 } from '@nestjs/microservices';
 import { createWriteStream } from 'node:fs'
 import * as csv from 'fast-csv'
-import { ThrottlerGuard, ThrottlerLimitDetail, ThrottlerRequest } from '@nestjs/throttler';
+import { ThrottlerGuard, ThrottlerRequest } from '@nestjs/throttler';
 
 type MyEvent = {
   publishedTimestamp: number
@@ -16,13 +16,6 @@ type MyEvent = {
 
 @Injectable()
 class RcpThrottlerGuard extends ThrottlerGuard {
-  async throwThrottlingException(
-    context: ExecutionContext,
-    throttlerLimitDetail: ThrottlerLimitDetail,
-  ): Promise<void> {
-    throw new RpcException(await this.getErrorMessage(context, throttlerLimitDetail));
-  }
-
   async handleRequest(requestProps: ThrottlerRequest): Promise<boolean> {
     const {
       context,
@@ -34,9 +27,11 @@ class RcpThrottlerGuard extends ThrottlerGuard {
     } = requestProps;
 
     const ctx = context.switchToRpc().getContext() as KafkaContext
-    const tracker = ctx.getTopic()
+    const topic = ctx.getTopic()
+    const partition = ctx.getPartition()
+    const tracker = `${topic}-${partition}`
     const key = generateKey(context, tracker, throttler.name);
-    const { totalHits, timeToExpire, isBlocked, timeToBlockExpire } =
+    const { isBlocked, timeToBlockExpire } =
       await this.storageService.increment(
         key,
         ttl,
@@ -46,16 +41,16 @@ class RcpThrottlerGuard extends ThrottlerGuard {
       );
 
     if (isBlocked) {
-      await this.throwThrottlingException(context, {
-        limit,
-        ttl,
-        key,
-        tracker,
-        totalHits,
-        timeToExpire,
-        isBlocked,
-        timeToBlockExpire,
-      });
+      const consumer = ctx.getConsumer()
+      consumer.pause([{ topic, partitions: [partition] }])
+      setTimeout(async () => {
+        const paused = consumer.paused()
+        if (paused.find((tp) => tp.topic === topic && tp.partitions.includes(partition))) {
+          consumer.resume([{ topic, partitions: [partition] }])
+        }
+      }, timeToBlockExpire * 1000)
+
+      throw new KafkaRetriableException(`Throttling limit reached on ${topic}:${partition}`)
     }
 
     return true;
