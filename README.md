@@ -96,3 +96,20 @@ consumer-1    |     at async Runner.processEachMessage (/app/node_modules/kafkaj
 consumer-1    |     at async onBatch (/app/node_modules/kafkajs/src/consumer/runner.js:447:9)
 consumer-1    | [Nest] 1  - 11/08/2024, 4:05:00 PM   ERROR [ServerKafka] ERROR [Runner] Error when calling eachMessage {"timestamp":"2024-11-08T16:05:00.214Z","logger":"kafkajs","topic":"my_event","partition":0,"offset":"889","error":{"status":"error","message":"Internal server error"}}
 ```
+
+### with-chandle-request
+
+When we override `handleRequest` things start looking better at first. Messages from kafka get processed up to a throttle limit.  
+Unfortunately that's where it stops. Throwing `RpcException` (or even `KafkaRetiriableException`) causes flurry of ERROR logs and an eventual consumer restart.  
+Due to constant consumer restarts and group rebalancing, this slows down any message processing significantly beyond throttling limits.
+```
+consumer-1    | >>> Got message id=event-30-01JC6Z1451VW0YKNF1RPAGPHXE
+consumer-1    | >>> Got message id=event-31-01JC6Z14MPBX4KP7EFKS668QRY
+consumer-1    | [Nest] 1  - 11/08/2024, 10:43:34 PM   ERROR [ServerKafka] ERROR [Runner] Error when calling eachMessage {"timestamp":"2024-11-08T22:43:34.269Z","logger":"kafkajs","topic":"my_event","partition":0,"offset":"32","error":{"status":"error","message":"ThrottlerException: Too Many Requests"}}
+consumer-1    | [Nest] 1  - 11/08/2024, 10:43:34 PM   ERROR [ServerKafka] ERROR [Consumer] Crash: KafkaJSNumberOfRetriesExceeded: ThrottlerException: Too Many Requests {"timestamp":"2024-11-08T22:43:34.272Z","logger":"kafkajs","groupId":"nestjs-group-server","retryCount":5,"stack":"KafkaJSNonRetriableError\n  Caused by: undefined"}
+kafka-1       | [2024-11-08 22:43:34,273] INFO [GroupCoordinator 0]: Preparing to rebalance group nestjs-group-server in state PreparingRebalance with old generation 15 (__consumer_offsets-33) (reason: Removing member nestjs-consumer-server-1a7f8d3c-220e-4699-992c-f6f908da3516 on LeaveGroup; client reason: not provided) (kafka.coordinator.group.GroupCoordinator)
+kafka-1       | [2024-11-08 22:43:34,273] INFO [GroupCoordinator 0]: Group nestjs-group-server with generation 16 is now empty (__consumer_offsets-33) (kafka.coordinator.group.GroupCoordinator)
+kafka-1       | [2024-11-08 22:43:34,274] INFO [GroupCoordinator 0]: Member MemberMetadata(memberId=nestjs-consumer-server-1a7f8d3c-220e-4699-992c-f6f908da3516, groupInstanceId=None, clientId=nestjs-consumer-server, clientHost=/172.18.0.4, sessionTimeoutMs=30000, rebalanceTimeoutMs=60000, supportedProtocols=List(RoundRobinAssigner)) has left group nestjs-group-server through explicit `LeaveGroup`; client reason: not provided (kafka.coordinator.group.GroupCoordinator)
+consumer-1    | [Nest] 1  - 11/08/2024, 10:43:34 PM     LOG [ServerKafka] INFO [Consumer] Stopped {"timestamp":"2024-11-08T22:43:34.275Z","logger":"kafkajs","groupId":"nestjs-group-server"}
+consumer-1    | [Nest] 1  - 11/08/2024, 10:43:34 PM   ERROR [ServerKafka] ERROR [Consumer] Restarting the consumer in 10718ms {"timestamp":"2024-11-08T22:43:34.275Z","logger":"kafkajs","retryCount":5,"retryTime":10718,"groupId":"nestjs-group-server"}
+```
