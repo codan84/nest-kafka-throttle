@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
-import { AppController, GracefulKafkaThrottlerService } from './app.controller';
+import { AppController } from './app.controller';
 import { ConfigModule } from '@nestjs/config';
+import { GracefulKafkaThrottlerService } from './throttler'
 
 const config = () => ({
   kafkaThrottlerSlidingWindowMs: 5000,
