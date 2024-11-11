@@ -60,6 +60,8 @@ export class GracefulKafkaThrottlerService {
 
 @Injectable()
 export class GracefulKafkaThrottler implements NestInterceptor {
+  private readonly logger = new Logger('GracefulKafkaThrottler')
+
   @Inject()
   private storage: GracefulKafkaThrottlerService
 
@@ -74,7 +76,7 @@ export class GracefulKafkaThrottler implements NestInterceptor {
     const blockedMs = this.storage.increment(topic);
 
     if (blockedMs) {
-      console.log(`>>pause for ${blockedMs}`)
+      this.logger.warn(`Pause consumer for ${topic} for ${blockedMs}ms`)
       consumer.seek({
         topic,
         partition,
@@ -82,7 +84,7 @@ export class GracefulKafkaThrottler implements NestInterceptor {
       })
       consumer.pause([{ topic, partitions: [partition] }])
       setTimeout(async () => {
-        console.log('>>unpause')
+        this.logger.log(`Unpausing consumer for ${topic}`)
         const paused = consumer.paused()
         if (paused.find((tp) => tp.topic === topic && tp.partitions.includes(partition))) {
           consumer.resume([{ topic, partitions: [partition] }])
