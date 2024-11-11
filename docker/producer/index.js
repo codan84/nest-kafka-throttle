@@ -6,7 +6,7 @@ import * as csv from 'fast-csv'
 let timerId = null
 let count = 0
 const maxCount = 40
-const delay = 500
+const delay = 1000
 
 const file = createWriteStream('/app/outputs/producer.csv')
 const csvStream = csv.format({ headers: true })

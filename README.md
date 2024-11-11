@@ -113,3 +113,40 @@ kafka-1       | [2024-11-08 23:24:16,113] INFO [GroupCoordinator 0]: Member Memb
 consumer-1    | [Nest] 1  - 11/08/2024, 11:24:16 PM     LOG [ServerKafka] INFO [Consumer] Stopped {"timestamp":"2024-11-08T23:24:16.113Z","logger":"kafkajs","groupId":"nestjs-group-server"}
 consumer-1    | [Nest] 1  - 11/08/2024, 11:24:16 PM   ERROR [ServerKafka] ERROR [Consumer] Restarting the consumer in 14764ms {"timestamp":"2024-11-08T23:24:16.114Z","logger":"kafkajs","retryCount":5,"retryTime":14764,"groupId":"nestjs-group-server"}
 ```
+
+### custom-throttling-interceptor
+
+There are few issues with using a guard for throttling of Kakfa consumer in general. These are:
+- if we return `false` from `canActivate` method of a guard, we end up with an exception thrown
+- if we throw an exception from a guard, then we end up with, well, an exception thrown froma guard
+Both of the above approaches eventually propagate the exception to Kafka Consumer. This in turn will restart Kafka Client once X number of exceptions have been thrown (by default 5, can be configured).
+
+What we want to is:
+1. Handle throttling gracefully! This is not an exception/error situation, so we do not want error logs.
+2. Do not cause Kafka Client to restart due to exceptions being thrown
+
+To acheive the above we can use an interceptor instead of a guard, this way:
+- we can skip calling the message handler altogether if we exceed throttling limit
+- we do not need to throw any exceptions
+
+Downsides to this are:
+- we need to disable `autoCommit`
+- we need to handle committing offsets manually
+
+However, after doing this we can see throttling working correctly without any error logs or Kafka Client restarts:
+```
+producer-1    | >>> Producer sending event 29/40...
+consumer-1    | >>> Got message id=event-24-01JCDR21HHFVRA4B5ENTJ8QZGT
+consumer-1    | >>> Got message id=event-25-01JCDR22GRV9AX1713DCJ2WKBQ
+consumer-1    | >>> Got message id=event-26-01JCDR23G1B43GMYSR8HRZE50M
+consumer-1    | >>> Got message id=event-27-01JCDR24F8M1AXM5FW2SRACJTA
+consumer-1    | >>> Got message id=event-28-01JCDR25EJCHP7WK1WHXR2V0AD
+consumer-1    | >>> Got message id=event-29-01JCDR26DT7HPZJDT63NGATBC3
+producer-1    | >>> Producer sending event 30/40...
+consumer-1    | >>pause for 995
+consumer-1    | [Nest] 1  - 11/11/2024, 1:54:26 PM     LOG [ServerKafka] INFO [ConsumerGroup] Pausing fetching from 1 topics {"timestamp":"2024-11-11T13:54:26.860Z","logger":"kafkajs","topicPartitions":[{"topic":"my_event","partitions":[0]}]}
+producer-1    | >>> Producer sending event 31/40...
+consumer-1    | >>unpause
+consumer-1    | [Nest] 1  - 11/11/2024, 1:54:27 PM     LOG [ServerKafka] INFO [ConsumerGroup] Resuming fetching from 1 topics {"timestamp":"2024-11-11T13:54:27.855Z","logger":"kafkajs","topicPartitions":[{"topic":"my_event","partitions":[0]}]}
+producer-1    | >>> Producer sending event 32/40...
+```

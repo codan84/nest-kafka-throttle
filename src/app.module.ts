@@ -1,14 +1,21 @@
 import { Module } from '@nestjs/common';
-import { ThrottlerModule } from '@nestjs/throttler';
-import { AppController } from './app.controller';
+import { AppController, GracefulKafkaThrottlerService } from './app.controller';
+import { ConfigModule } from '@nestjs/config';
+
+const config = () => ({
+  kafkaThrottlerSlidingWindowMs: 5000,
+  kafkaThrottlerMaxMessages: 7
+})
 
 @Module({
   imports: [
-    // 2 messages every 5 seconds
-    ThrottlerModule.forRoot([{
-      ttl: 5000,
-      limit: 2,
-    }])
+    ConfigModule.forRoot({
+      load: [config],
+      isGlobal: true,
+    })
+  ],
+  providers: [
+    GracefulKafkaThrottlerService
   ],
   controllers: [AppController]
 })
