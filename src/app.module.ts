@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { ConfigModule } from '@nestjs/config';
-import { GracefulKafkaThrottlerService } from './throttler'
+import { KafkaThrottlerModule } from './throttler'
 
 const config = () => ({
   kafkaThrottlerSlidingWindowMs: 5000,
@@ -13,10 +13,8 @@ const config = () => ({
     ConfigModule.forRoot({
       load: [config],
       isGlobal: true,
-    })
-  ],
-  providers: [
-    GracefulKafkaThrottlerService
+    }),
+    KafkaThrottlerModule
   ],
   controllers: [AppController]
 })

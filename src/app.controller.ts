@@ -10,7 +10,7 @@ import {
 } from '@nestjs/microservices';
 import { createWriteStream } from 'node:fs'
 import * as csv from 'fast-csv'
-import { GracefulKafkaThrottler } from './throttler'
+import { KafkaThrottler } from './throttler'
 
 type MyEvent = {
   publishedTimestamp: number
@@ -26,7 +26,7 @@ export class AppController {
     this.csv.pipe(file).on('end', () => file.close())
   }
 
-  @UseInterceptors(GracefulKafkaThrottler)
+  @UseInterceptors(KafkaThrottler)
   @EventPattern('my_event')
   async handleMyEvent(
     @Payload() event: MyEvent,
