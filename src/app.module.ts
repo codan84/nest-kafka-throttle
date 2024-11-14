@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { KafkaThrottlerModule } from './throttler'
 
 const config = () => ({
@@ -14,7 +14,14 @@ const config = () => ({
       load: [config],
       isGlobal: true,
     }),
-    KafkaThrottlerModule
+    KafkaThrottlerModule.registerAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        maxMessages: config.get('kafkaThrottlerMaxMessages'),
+        slidingWindowMs: config.get('kafkaThrottlerSlidingWindowMs'),
+      })
+    })
   ],
   controllers: [AppController]
 })
